@@ -1,0 +1,348 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>35分モジュール復習システム</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/recharts/2.12.2/Recharts.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.24.0/babel.min.js"></script>
+    <link href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css" rel="stylesheet">
+</head>
+<body>
+    <div id="root"></div>
+
+    <script type="text/babel">
+        const { useState, useEffect } = React;
+        const { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer } = Recharts;
+
+        const DEFAULT_CATEGORIES = ["プログラミング", "語学", "数学", "科学", "その他"];
+
+        const Button = ({ children, onClick, className = "", variant = "primary" }) => {
+            const baseClasses = "px-4 py-2 rounded font-semibold focus:outline-none focus:ring-2 focus:ring-offset-2";
+            const variantClasses = variant === "primary" 
+                ? "bg-blue-600 text-white hover:bg-blue-700 focus:ring-blue-500" 
+                : "bg-gray-100 text-gray-700 hover:bg-gray-200 focus:ring-gray-500";
+            
+            return (
+                <button 
+                    className={`${baseClasses} ${variantClasses} ${className}`}
+                    onClick={onClick}
+                >
+                    {children}
+                </button>
+            );
+        };
+
+        const Input = ({ value, onChange, placeholder, className = "" }) => (
+            <input
+                type="text"
+                value={value}
+                onChange={onChange}
+                placeholder={placeholder}
+                className={`border border-gray-300 rounded px-4 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500 ${className}`}
+            />
+        );
+
+        const Select = ({ value, onChange, options }) => (
+            <select
+                value={value}
+                onChange={(e) => onChange(e.target.value)}
+                className="border border-gray-300 rounded px-4 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
+            >
+                {options.map(option => (
+                    <option key={option} value={option}>
+                        {option}
+                    </option>
+                ))}
+            </select>
+        );
+
+        const Dialog = ({ isOpen, onClose, title, children }) => {
+            if (!isOpen) return null;
+
+            return (
+                <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4">
+                    <div className="bg-white rounded-lg p-6 max-w-md w-full">
+                        <div className="flex justify-between items-center mb-4">
+                            <h3 className="text-lg font-semibold">{title}</h3>
+                            <button onClick={onClose} className="text-gray-500 hover:text-gray-700">
+                                ×
+                            </button>
+                        </div>
+                        {children}
+                    </div>
+                </div>
+            );
+        };
+
+        const App = () => {
+            const [studyNotes, setStudyNotes] = useState(() => {
+                const saved = localStorage.getItem('studyNotes');
+                return saved ? JSON.parse(saved) : [];
+            });
+
+            const [categories, setCategories] = useState(() => {
+                const saved = localStorage.getItem('categories');
+                return saved ? JSON.parse(saved) : DEFAULT_CATEGORIES;
+            });
+
+            const [newNote, setNewNote] = useState('');
+            const [selectedCategory, setSelectedCategory] = useState(categories[0]);
+            const [newCategory, setNewCategory] = useState('');
+            const [activeTab, setActiveTab] = useState('review');
+            const [isDialogOpen, setIsDialogOpen] = useState(false);
+
+            useEffect(() => {
+                localStorage.setItem('studyNotes', JSON.stringify(studyNotes));
+            }, [studyNotes]);
+
+            useEffect(() => {
+                localStorage.setItem('categories', JSON.stringify(categories));
+            }, [categories]);
+
+            const addCategory = () => {
+                if (newCategory.trim() === '' || categories.includes(newCategory.trim())) return;
+                setCategories([...categories, newCategory.trim()]);
+                setNewCategory('');
+            };
+
+            const removeCategory = (categoryToRemove) => {
+                if (categories.length <= 1) {
+                    alert('少なくとも1つのカテゴリーが必要です');
+                    return;
+                }
+                
+                const updatedCategories = categories.filter(cat => cat !== categoryToRemove);
+                setCategories(updatedCategories);
+                
+                const updatedNotes = studyNotes.map(note => {
+                    if (note.category === categoryToRemove) {
+                        return { ...note, category: 'その他' };
+                    }
+                    return note;
+                });
+                
+                setStudyNotes(updatedNotes);
+                
+                if (selectedCategory === categoryToRemove) {
+                    setSelectedCategory(updatedCategories[0]);
+                }
+            };
+
+            const addNote = () => {
+                if (newNote.trim() === '') return;
+                const currentDate = new Date();
+                const note = {
+                    content: newNote,
+                    category: selectedCategory,
+                    created: currentDate.toISOString(),
+                    reviewDates: {
+                        day: new Date(currentDate.getTime() + 24 * 60 * 60 * 1000).toISOString(),
+                        week: new Date(currentDate.getTime() + 7 * 24 * 60 * 60 * 1000).toISOString(),
+                        month: new Date(currentDate.getTime() + 30 * 24 * 60 * 60 * 1000).toISOString(),
+                    }
+                };
+                setStudyNotes([...studyNotes, note]);
+                setNewNote('');
+            };
+
+            const getTodayItems = () => {
+                const startOfDay = new Date();
+                startOfDay.setHours(0, 0, 0, 0);
+                return studyNotes.filter(note => {
+                    const noteDate = new Date(note.created);
+                    return noteDate >= startOfDay;
+                });
+            };
+
+            const getReviewItemsByDate = () => {
+                const now = new Date();
+                const notes = studyNotes.filter(note => {
+                    const reviewDay = new Date(note.reviewDates.day);
+                    const reviewWeek = new Date(note.reviewDates.week);
+                    const reviewMonth = new Date(note.reviewDates.month);
+                    return reviewDay <= now || reviewWeek <= now || reviewMonth <= now;
+                });
+
+                const categorized = notes.reduce((acc, note) => {
+                    const now = new Date();
+                    const reviewDay = new Date(note.reviewDates.day);
+                    const reviewWeek = new Date(note.reviewDates.week);
+                    const reviewMonth = new Date(note.reviewDates.month);
+
+                    if (reviewDay <= now) acc.day.push(note);
+                    if (reviewWeek <= now) acc.week.push(note);
+                    if (reviewMonth <= now) acc.month.push(note);
+
+                    return acc;
+                }, { day: [], week: [], month: [] });
+
+                return categorized;
+            };
+
+            const getStatisticsData = () => {
+                const categoryCount = categories.map(category => ({
+                    name: category,
+                    count: studyNotes.filter(note => note.category === category).length
+                }));
+
+                const timeData = [];
+                const last7Days = Array.from({length: 7}, (_, i) => {
+                    const date = new Date();
+                    date.setDate(date.getDate() - i);
+                    return date;
+                }).reverse();
+
+                last7Days.forEach(date => {
+                    const startOfDay = new Date(date);
+                    startOfDay.setHours(0, 0, 0, 0);
+                    const endOfDay = new Date(date);
+                    endOfDay.setHours(23, 59, 59, 999);
+
+                    const count = studyNotes.filter(note => {
+                        const noteDate = new Date(note.created);
+                        return noteDate >= startOfDay && noteDate <= endOfDay;
+                    }).length;
+
+                    timeData.push({
+                        date: date.toLocaleDateString('ja-JP', { month: 'short', day: 'numeric' }),
+                        count: count
+                    });
+                });
+
+                return { categoryCount, timeData };
+            };
+
+            const renderNotesList = (notes) => (
+                <ul className="space-y-2">
+                    {notes.map((note, index) => (
+                        <li key={index} className="p-2 bg-gray-50 rounded">
+                            <div className="flex justify-between items-start">
+                                <div>
+                                    {note.content}
+                                    <div className="text-sm text-gray-500">
+                                        作成日: {new Date(note.created).toLocaleDateString('ja-JP')}
+                                    </div>
+                                </div>
+                                <span className="text-sm bg-blue-100 px-2 py-1 rounded">
+                                    {note.category}
+                                </span>
+                            </div>
+                        </li>
+                    ))}
+                </ul>
+            );
+
+            const renderReviewSection = (title, notes) => (
+                <div className="mb-6">
+                    <h3 className="text-lg font-semibold mb-2">{title}</h3>
+                    {notes.length > 0 ? (
+                        <ul className="space-y-2">
+                            {notes.map((note, index) => (
+                                <li key={index} className="p-3 bg-gray-50 rounded border-l-4 border-blue-500">
+                                    <div className="flex justify-between items-start">
+                                        <div>
+                                            <p className="mb-1">{note.content}</p>
+                                            <p className="text-sm text-gray-500">
+                                                作成日: {new Date(note.created).toLocaleDateString('ja-JP')}
+                                            </p>
+                                        </div>
+                                        <span className="text-sm bg-blue-100 px-2 py-1 rounded">
+                                            {note.category}
+                                        </span>
+                                    </div>
+                                </li>
+                            ))}
+                        </ul>
+                    ) : (
+                        <p className="text-gray-500">復習する項目はありません</p>
+                    )}
+                </div>
+            );
+
+            const { categoryCount, timeData } = getStatisticsData();
+
+            return (
+                <div className="max-w-4xl mx-auto p-4 space-y-4">
+                    <div className="bg-white rounded-lg shadow-lg p-6">
+                        <h1 className="text-2xl font-bold mb-4">35分モジュール復習システム</h1>
+                        <div className="flex gap-2 mb-4">
+                            <Input
+                                value={newNote}
+                                onChange={(e) => setNewNote(e.target.value)}
+                                placeholder="今日の学習内容を入力してください"
+                                className="flex-grow"
+                            />
+                            <Select
+                                value={selectedCategory}
+                                onChange={setSelectedCategory}
+                                options={categories}
+                            />
+                            <Button onClick={addNote}>追加</Button>
+                            <Button onClick={() => setIsDialogOpen(true)} variant="secondary">
+                                カテゴリー管理
+                            </Button>
+                        </div>
+                    </div>
+
+                    <div className="bg-white rounded-lg shadow-lg p-6">
+                        <div className="flex space-x-2 mb-4">
+                            <Button 
+                                onClick={() => setActiveTab('review')}
+                                variant={activeTab === 'review' ? 'primary' : 'secondary'}
+                            >
+                                今日の復習内容
+                            </Button>
+                            <Button 
+                                onClick={() => setActiveTab('today')}
+                                variant={activeTab === 'today' ? 'primary' : 'secondary'}
+                            >
+                                今日の学習内容
+                            </Button>
+                            <Button 
+                                onClick={() => setActiveTab('stats')}
+                                variant={activeTab === 'stats' ? 'primary' : 'secondary'}
+                            >
+                                学習統計
+                            </Button>
+                        </div>
+
+                        {activeTab === 'review' && (
+                            <div>
+                                <h2 className="text-xl font-semibold mb-2">今日の復習内容</h2>
+                                <p className="text-gray-500 mb-4">復習のタイミングが来た学習項目を表示しています</p>
+                                {(() => {
+                                    const reviewItems = getReviewItemsByDate();
+                                    return (
+                                        <div className="space-y-6">
+                                            {renderReviewSection("1日後の復習", reviewItems.day)}
+                                            {renderReviewSection("1週間後の復習", reviewItems.week)}
+                                            {renderReviewSection("1ヶ月後の復習", reviewItems.month)}
+                                        </div>
+                                    );
+                                })()}
+                            </div>
+                        )}
+
+                        {activeTab === 'today' && (
+                            <div>
+                                <h2 className="text-xl font-semibold mb-4">今日の学習内容</h2>
+                                {renderNotesList(getTodayItems())}
+                            </div>
+                        )}
+
+                        {activeTab === 'stats' && (
+                            <div>
+                                <h2 className="text-xl font-semibold mb-4">学習統計</h2>
+                                <div className="space-y-6">
+                                    <div>
+                                        <h3 className="text-lg font-semibold mb-2">カテゴリー別学習数</h3>
+                                        <div style={{ width: '100%', height: 200 }}>
+                                            <ResponsiveContainer>
+                                                <BarChart data={categoryCount}>
+                                                    <XAxis dataKey="name" />
+                                                    <YAxis />
+                                                    <Tooltip />
+                                                    
